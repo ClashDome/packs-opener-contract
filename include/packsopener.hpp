@@ -11,7 +11,7 @@ using namespace std;
 #define ATOMIC name("atomicassets")
 #define EOSIO name("eosio")
 
-#define CONTRACTN name("packstest111")
+#define CONTRACTN name("packsopenerx")
 
 CONTRACT packsopener : public contract
 {

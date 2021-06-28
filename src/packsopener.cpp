@@ -282,54 +282,58 @@ void packsopener::receive_asset_transfer(
         return;
     }
 
-    check(asset_ids.size() == 1, "Only one pack can be opened at a time");
-    check(memo == "unbox", "Invalid memo");
+    if (memo == "unbox") {
 
-    atomicassets::assets_t own_assets = atomicassets::get_assets(get_self());
-    auto asset_itr = own_assets.find(asset_ids[0]);
+        check(asset_ids.size() == 1, "Only one pack can be opened at a time");
 
-    check(asset_itr->template_id != -1, "The transferred asset does not belong to a template");
-    
-    auto packs_by_template_id = packs.get_index<name("templateid")>();
-    auto pack_itr = packs_by_template_id.require_find(asset_itr->template_id,
-        "The transferred asset's template does not belong to any pack");
-    
-    check(pack_itr->unlock_time <= current_time_point().sec_since_epoch(), "The pack has not unlocked yet");
+        atomicassets::assets_t own_assets = atomicassets::get_assets(get_self());
+        auto asset_itr = own_assets.find(asset_ids[0]);
 
-    //Get signing value from transaction id
-    //As this is only used as the signing value for the randomness oracle, it does not matter that this
-    //signing value is not truly random
+        check(asset_itr->template_id != -1, "The transferred asset does not belong to a template");
+        
+        auto packs_by_template_id = packs.get_index<name("templateid")>();
+        auto pack_itr = packs_by_template_id.require_find(asset_itr->template_id,
+            "The transferred asset's template does not belong to any pack");
+        
+        check(pack_itr->unlock_time <= current_time_point().sec_since_epoch(), "The pack has not unlocked yet");
 
-    auto size = transaction_size();
-    char buf[size];
+        //Get signing value from transaction id
+        //As this is only used as the signing value for the randomness oracle, it does not matter that this
+        //signing value is not truly random
 
-    auto read = read_transaction(buf, size);
-    check(size == read, "read_transaction() has failed.");
+        auto size = transaction_size();
+        char buf[size];
 
-    checksum256 tx_id = eosio::sha256(buf, read);
+        auto read = read_transaction(buf, size);
+        check(size == read, "read_transaction() has failed.");
 
-    uint64_t signing_value;
+        checksum256 tx_id = eosio::sha256(buf, read);
 
-    memcpy(&signing_value, tx_id.data(), sizeof(signing_value));
+        uint64_t signing_value;
 
-    //It is not necessary to check the necessary RAM because the content of the packs is pre-mined
+        memcpy(&signing_value, tx_id.data(), sizeof(signing_value));
 
-    unboxpacks.emplace(get_self(), [&](auto &_unboxpack) {
-        _unboxpack.pack_asset_id = asset_ids[0];
-        _unboxpack.pack_id = pack_itr->pack_id;
-        _unboxpack.unboxer = from;
-    });
+        //It is not necessary to check the necessary RAM because the content of the packs is pre-mined
 
-    action(
-        permission_level{get_self(), name("active")},
-        name("orng.wax"),
-        name("requestrand"),
-        std::make_tuple(
-            asset_ids[0], //used as assoc id
-            signing_value,
-            get_self()
-        )
-    ).send();
+        unboxpacks.emplace(get_self(), [&](auto &_unboxpack) {
+            _unboxpack.pack_asset_id = asset_ids[0];
+            _unboxpack.pack_id = pack_itr->pack_id;
+            _unboxpack.unboxer = from;
+        });
+
+        action(
+            permission_level{get_self(), name("active")},
+            name("orng.wax"),
+            name("requestrand"),
+            std::make_tuple(
+                asset_ids[0], //used as assoc id
+                signing_value,
+                get_self()
+            )
+        ).send();
+    } else {
+        check(memo == "transfer", "Invalid memo");
+    }
 }
 
 /**
