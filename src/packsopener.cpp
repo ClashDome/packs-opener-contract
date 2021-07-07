@@ -15,7 +15,7 @@ ACTION packsopener::createpack(
     int32_t pack_template_id,
     string display_data
 ) {
-    require_auth(authorized_account);
+    require_auth(get_self());
 
     check_has_collection_auth(authorized_account, collection_name);
     check_has_collection_auth(get_self(), collection_name);
@@ -78,6 +78,8 @@ ACTION packsopener::receiverand(
         availables.push_back(itr->id);
         itr++;
     } 
+
+    check(availables.size() > 0, "No assets availables.");
 
     //cast the random_value to a smaller number
     uint64_t max_value = availables.size() - 1;
@@ -153,7 +155,7 @@ ACTION packsopener::genpacks(
     uint64_t pack_template_id
 ) {
 
-    require_auth(authorized_account);
+    require_auth(get_self());
 
     auto idx = packs.get_index<"templateid"_n>();
 
@@ -262,6 +264,52 @@ ACTION packsopener::loggenpacks(
     vector<uint64_t> vec
 ) {
     require_auth(get_self());
+}
+
+/**
+* Requests new randomness for a given assoc_id
+* This is supposed to be used in the rare case that the RNG oracle kills a job for a pack unboxing
+* due to issues with the finisher script.
+*
+* @required_auth The contract itself
+*/
+ACTION packsopener::retryrand(
+    uint64_t pack_asset_id
+) {
+    require_auth(get_self());
+
+    auto pack_itr = unboxpacks.require_find(pack_asset_id,
+        "No open unboxpacks entry with the specified pack asset id exists");
+    
+    check(pack_itr->assets_ids.empty(),
+        "The specified pack asset id already has results");
+
+    //Get signing value from transaction id
+    //As this is only used as the signing value for the randomness oracle, it does not matter that this
+    //signing value is not truly random
+
+    auto size = transaction_size();
+    char buf[size];
+
+    auto read = read_transaction(buf, size);
+    check(size == read, "read_transaction() has failed.");
+
+    checksum256 tx_id = eosio::sha256(buf, read);
+
+    uint64_t signing_value;
+
+    memcpy(&signing_value, tx_id.data(), sizeof(signing_value));
+
+    action(
+        permission_level{get_self(), name("active")},
+        name("orng.wax"),
+        name("requestrand"),
+        std::make_tuple(
+            pack_asset_id, //used as assoc id
+            signing_value,
+            get_self()
+        )
+    ).send();
 }
 
 /**

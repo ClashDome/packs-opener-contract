@@ -26,6 +26,10 @@ public:
         string display_data
     );
 
+    ACTION retryrand(
+        uint64_t pack_asset_id
+    );
+
     ACTION receiverand(
         uint64_t assoc_id,
         checksum256 random_value
