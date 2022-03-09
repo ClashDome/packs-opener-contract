@@ -1,5 +1,96 @@
 #include <packsopener.hpp>
 
+ACTION packsopener::claimavatar(
+    name unboxer,
+    uint64_t pack_asset_id
+) {
+    require_auth(unboxer);
+
+    auto avatarpacks_itr = avatarpacks.find(pack_asset_id);
+
+    check(avatarpacks_itr != avatarpacks.end(), "Asset with id " + to_string(pack_asset_id) + " not claimable!");
+    check(avatarpacks_itr->unboxer == unboxer, "Unboxer missmatch. " + avatarpacks_itr->unboxer.to_string() + " != " + unboxer.to_string());
+
+    avatarpacks.modify(avatarpacks_itr, get_self(), [&](auto &_pack) {
+        _pack.claimable = true;
+    });
+}
+
+ACTION packsopener::createavatar(
+    name unboxer,
+    uint64_t pack_asset_id,
+    uint32_t template_id
+) {
+    require_auth(get_self());
+
+    auto avatarpacks_itr = avatarpacks.find(pack_asset_id);
+
+    check(avatarpacks_itr != avatarpacks.end(), "Asset with id " + to_string(pack_asset_id) + " not claimable!");
+    check(avatarpacks_itr->unboxer == unboxer, "Unboxer missmatch. " + avatarpacks_itr->unboxer.to_string() + " != " + unboxer.to_string());
+    check(avatarpacks_itr->claimable, "Citizen not claimable yet!");
+
+    ATTRIBUTE_MAP attr_map = {}; 
+    vector<asset> token_to_back;
+
+    action(
+        permission_level{get_self(), name("active")},
+        atomicassets::ATOMICASSETS_ACCOUNT,
+        name("mintasset"),
+        std::make_tuple(
+            get_self(),
+            name(COLLECTION_NAME),
+            name("citizen"),
+            template_id,
+            unboxer,
+            attr_map,
+            attr_map,
+            token_to_back
+        )
+    ).send();
+
+    // burn the pack
+    action(
+        permission_level{get_self(), name("active")},
+        atomicassets::ATOMICASSETS_ACCOUNT,
+        name("burnasset"),
+        std::make_tuple(
+            get_self(),
+            avatarpacks_itr->pack_asset_id
+        )
+    ).send();
+
+    avatarpacks.erase(avatarpacks_itr);
+}
+
+ACTION packsopener::unstakeav(
+    name unboxer,
+    uint64_t pack_asset_id
+) {
+    require_auth(unboxer);
+
+    auto avatarpacks_itr = avatarpacks.find(pack_asset_id);
+
+    check(avatarpacks_itr != avatarpacks.end(), "Asset with id " + to_string(pack_asset_id) + " not available!");
+    check(avatarpacks_itr->unboxer == unboxer, "Unboxer missmatch. " + avatarpacks_itr->unboxer.to_string() + " != " + unboxer.to_string());
+
+    vector<uint64_t> assets_ids;
+    assets_ids.push_back(pack_asset_id);
+
+    action(
+        permission_level{get_self(), name("active")},
+        atomicassets::ATOMICASSETS_ACCOUNT,
+        name("transfer"),
+        std::make_tuple(
+            get_self(),
+            unboxer,
+            assets_ids,
+            "Pack " + to_string(pack_asset_id) + "unstaked."
+        )
+    ).send();
+
+    avatarpacks.erase(avatarpacks_itr);
+}
+
 /**
 * Funcion from atomicpacks contract
 *
@@ -238,6 +329,11 @@ ACTION packsopener::removeall(
         while (it != availpacks.end()) {
             it = availpacks.erase(it);
         }
+    } else if (table == "avatarpacks") {
+        auto it = avatarpacks.begin();
+        while (it != avatarpacks.end()) {
+            it = avatarpacks.erase(it);
+        }
     }
 }
 
@@ -379,6 +475,50 @@ void packsopener::receive_asset_transfer(
                 get_self()
             )
         ).send();
+    } else if (memo == "unbox avatar") {
+
+        check(asset_ids.size() == 1, "Only one pack can be opened at a time.");
+
+        auto idx = avatarpacks.get_index<"unboxer"_n>();
+        
+        auto itr = idx.find(from.value); 
+
+        check(itr == idx.end(), "YOU CAN ONLY STAKE ONE AMNIO-TANK AT ONCE.");
+
+        atomicassets::assets_t own_assets = atomicassets::get_assets(get_self());
+        auto asset_itr = own_assets.find(asset_ids[0]);
+
+        check(asset_itr->collection_name == name(COLLECTION_NAME), "NFT doesn't correspond to " + COLLECTION_NAME);
+        check(asset_itr->schema_name == name(CREATE_AVATAR_SCHEMA_NAME), "NFT doesn't correspond to schema " + CREATE_AVATAR_SCHEMA_NAME);
+        check(asset_itr->template_id == TEMPLATE_ID_1 || asset_itr->template_id == TEMPLATE_ID_2 || asset_itr->template_id == TEMPLATE_ID_3 , "NFT doesn't correspond to template ids.");
+
+        atomicassets::schemas_t collection_schemas = atomicassets::get_schemas(name(COLLECTION_NAME));
+        auto schema_itr = collection_schemas.find(name(CREATE_AVATAR_SCHEMA_NAME).value);
+
+        atomicassets::templates_t collection_templates = atomicassets::get_templates(name(COLLECTION_NAME));
+        auto template_itr = collection_templates.find(asset_itr->template_id);
+
+        vector <uint8_t> immutable_serialized_data = template_itr->immutable_serialized_data;
+
+        atomicassets::ATTRIBUTE_MAP idata = atomicdata::deserialize(immutable_serialized_data, schema_itr->format);
+        
+        string rarity = "";
+
+        if (asset_itr->template_id == TEMPLATE_ID_1) {
+            rarity = "Pleb";
+        } else if (asset_itr->template_id == TEMPLATE_ID_2) {
+            rarity = "UberNorm";
+        }  else if (asset_itr->template_id == TEMPLATE_ID_3) {
+            rarity = "Hi-Clone";
+        }
+
+        avatarpacks.emplace(get_self(), [&](auto &_avatarpack) {
+            _avatarpack.pack_asset_id = asset_ids[0];
+            _avatarpack.unboxer = from;
+            _avatarpack.rarity = rarity;
+            _avatarpack.claimable = false;
+        });
+
     } else {
         check(memo == "transfer", "Invalid memo");
     }

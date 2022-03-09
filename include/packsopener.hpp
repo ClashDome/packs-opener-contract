@@ -16,7 +16,23 @@ using namespace std;
 CONTRACT packsopener : public contract
 {
 public:
-   using contract::contract;
+    using contract::contract;
+
+    ACTION createavatar(
+        name unboxer,
+        uint64_t pack_asset_id,
+        uint32_t template_id
+    );
+
+    ACTION claimavatar(
+        name unboxer,
+        uint64_t pack_asset_id
+    );
+
+    ACTION unstakeav(
+        name unboxer,
+        uint64_t pack_asset_id
+    );
 
     ACTION createpack(
         name authorized_account,
@@ -111,6 +127,20 @@ private:
         indexed_by < name("unboxer"), const_mem_fun < unboxpacks_s, uint64_t, &unboxpacks_s::by_unboxer>>>
     unboxpacks_t;
 
+    TABLE avatarpacks_s {
+        uint64_t            pack_asset_id;
+        name                unboxer;
+        string              rarity;
+        bool                claimable;
+
+        uint64_t primary_key() const { return pack_asset_id; }
+        uint64_t by_unboxer() const { return unboxer.value; }
+    };
+
+    typedef multi_index<name("avatarpacks"), avatarpacks_s,
+        indexed_by < name("unboxer"), const_mem_fun < avatarpacks_s, uint64_t, &avatarpacks_s::by_unboxer>>>
+    avatarpacks_t;
+
     TABLE availpacks_s {
         uint64_t            id;
         uint64_t            pack_id;
@@ -127,7 +157,14 @@ private:
     packs_t             packs           = packs_t(get_self(), get_self().value);
     unboxpacks_t        unboxpacks      = unboxpacks_t(get_self(), get_self().value);
     availpacks_t        availpacks      = availpacks_t(get_self(), get_self().value);
+    avatarpacks_t       avatarpacks     = avatarpacks_t(get_self(), get_self().value);
 
     void check_has_collection_auth(name account_to_check, name collection_name);
+
+    const string COLLECTION_NAME = "clashdomenft";
+    const string CREATE_AVATAR_SCHEMA_NAME = "packs";
+    const uint32_t TEMPLATE_ID_1 = 336214;
+    const uint32_t TEMPLATE_ID_2 = 336216;
+    const uint32_t TEMPLATE_ID_3 = 336217;
 
 };
