@@ -262,7 +262,7 @@ ACTION packsopener::genpacks(
 
     while(assets_itr != own_assets.end()) {
 
-        if (assets_itr->collection_name == itr->collection_name) {
+        if (assets_itr->collection_name == itr->collection_name && assets_itr->schema_name == name("poolhalls")) {
 
             uint64_t id = availpacks.available_primary_key();
             if (id == 0) {
